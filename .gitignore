@@ -1,0 +1,27 @@
+# Ignore Python virtual environment
+backend/venv/
+
+# Ignore Python cache files
+*.pyc
+__pycache__/
+
+# Ignore environment variables and specific backend scripts
+backend/.env
+backend/quizgenerator.py
+backend/extractorClass.py
+
+# Ignore entire client folder
+client/
+teacherbackend/
+
+# Ignore node_modules inside teacher folder
+teacher/node_modules/
+
+# Ignore OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Ignore log files
+*.log
