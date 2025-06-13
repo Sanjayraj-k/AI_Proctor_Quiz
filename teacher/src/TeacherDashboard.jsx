@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Users, FileText, Plus, Eye, Settings, BookOpen, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Upload, Users, FileText, Plus, Eye, Settings, BookOpen, Clock, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
 import axios from 'axios';
 
 const TeacherDashboard = () => {
@@ -18,8 +19,20 @@ const TeacherDashboard = () => {
     numQuestions: 5,
   });
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const teacherName = 'Teacher John Doe';
+  // Get teacher data from localStorage
+  const teacherData = JSON.parse(localStorage.getItem('teacherData')) || {};
+  const teacherName = teacherData.name || 'Unknown Teacher';
+
+  // Check authentication on mount
+  useEffect(() => {
+    if (!teacherData.name) {
+      console.log('No teacher data found, redirecting to /teacher/auth');
+      localStorage.removeItem('teacherData');
+      navigate('/teacher/auth');
+    }
+  }, [navigate]);
 
   const fetchClassrooms = async () => {
     setIsLoading(true);
@@ -33,11 +46,13 @@ const TeacherDashboard = () => {
     } catch (error) {
       console.error('Error fetching classrooms:', error);
       let errorMessage = 'Failed to load classrooms. Please try again.';
-      if (error.response) {
-        // Server responded with a status other than 2xx
+      if (error.response?.status === 401) {
+        errorMessage = 'Session expired. Please log in again.';
+        localStorage.removeItem('teacherData');
+        navigate('/teacher/auth');
+      } else if (error.response) {
         errorMessage = `Error: ${error.response.status} - ${error.response.data?.error || 'Unknown server error'}`;
       } else if (error.request) {
-        // Request made but no response received
         errorMessage = 'Unable to reach the server. Please check if the backend is running.';
       }
       setError(errorMessage);
@@ -47,7 +62,9 @@ const TeacherDashboard = () => {
   };
 
   useEffect(() => {
-    fetchClassrooms();
+    if (teacherName !== 'Unknown Teacher') {
+      fetchClassrooms();
+    }
   }, [teacherName]);
 
   const handleFileUpload = (event) => {
@@ -126,13 +143,23 @@ const TeacherDashboard = () => {
     } catch (error) {
       console.error('Error creating classroom:', error);
       let errorMessage = error.response?.data?.error || 'Error creating classroom. Please try again.';
-      if (error.response?.status === 500) {
+      if (error.response?.status === 401) {
+        errorMessage = 'Session expired. Please log in again.';
+        localStorage.removeItem('teacherData');
+        navigate('/teacher/auth');
+      } else if (error.response?.status === 500) {
         errorMessage = `Server error: ${error.response.data?.error || 'Please check the backend logs.'}`;
       }
       setError(errorMessage);
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleLogout = () => {
+    console.log('Logging out, clearing localStorage');
+    localStorage.removeItem('teacherData');
+    navigate('/teacher/auth');
   };
 
   const formatFileSize = (bytes) => {
@@ -157,6 +184,13 @@ const TeacherDashboard = () => {
               <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
                 {teacherName.charAt(0)}
               </div>
+              <button
+                onClick={handleLogout}
+                className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
+              >
+                <LogOut className="h-4 w-4 mr-1" />
+                Logout
+              </button>
             </div>
           </div>
         </div>

@@ -22,9 +22,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 from datetime import datetime
-import bcrypt
 import traceback
-import gridfs
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -35,7 +33,6 @@ CORS(app, resources={
     r"/fetch-responses/*": {"origins": "http://localhost:5173"},
     r"/evaluate-quiz": {"origins": "http://localhost:5173"},
     r"/api/health": {"origins": "http://localhost:5173"}
-    
 })
 
 # MongoDB Configuration
@@ -47,9 +44,6 @@ try:
     quiz_collection = db["quizzes"]
     form_responses_collection = db["form_responses"]
     user_response_collection = db["user_response"]
-    teacher_auth = db['teacher']
-    classrooms = db['classrooms']
-    fs = gridfs.GridFS(db)
     print("MongoDB connection successful")
 except Exception as e:
     print(f"MongoDB connection failed: {str(e)}")
@@ -241,103 +235,6 @@ def create_quiz_graph():
 
 # Add this import at the top of your file
 from datetime import datetime
-def is_valid_email(email):
-    import re
-    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(email_regex, email)
-
-@app.route('/api/teachers/signup', methods=['POST'])
-def signup():
-    try:
-        data = request.get_json()
-        print(f"Signup request data: {data}")
-        name = data.get('name')
-        email = data.get('email')
-        password = data.get('password')
-        qualification = data.get('qualification')
-
-        # Input validation
-        if not all([name, email, password, qualification]):
-            return jsonify({'error': 'All fields are required'}), 400
-        
-        if not is_valid_email(email):
-            return jsonify({'error': 'Invalid email format'}), 400
-        
-        if len(password) < 6:
-            return jsonify({'error': 'Password must be at least 6 characters'}), 400
-
-        # Check for existing teacher
-        if teacher_auth.find_one({'email': email}):
-            return jsonify({'error': 'Email already registered'}), 409
-
-        # Hash password
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-        # Create teacher document
-        teacher = {
-            'name': name,
-            'email': email,
-            'password': hashed_password,
-            'qualification': qualification,
-            'created_at': datetime.now()
-        }
-
-        # Insert into MongoDB
-        result = teacher_auth.insert_one(teacher)
-        teacher_id = str(result.inserted_id)
-        print(f"Teacher created with ID: {teacher_id}")
-
-        # Return success response
-        return jsonify({
-            'message': 'Teacher created successfully',
-            'teacher': {
-                'name': name,
-                'email': email,
-                'qualification': qualification
-            }
-        }), 201
-
-    except Exception as e:
-        print(f"Signup error: {str(e)}")
-        return jsonify({'error': 'Server error'}), 500
-
-@app.route('/api/teachers/login', methods=['POST'])
-def login():
-    try:
-        data = request.get_json()
-        print(f"Login request data: {data}")
-        name = data.get('name')
-        email = data.get('email')
-        password = data.get('password')
-
-        # Input validation
-        if not all([name, email, password]):
-            return jsonify({'error': 'All fields are required'}), 400
-
-        # Find teacher
-        teacher = teacher_auth.find_one({'email': email, 'name': name})
-        if not teacher:
-            print(f"Teacher not found for email: {email}, name: {name}")
-            return jsonify({'error': 'Invalid name or email'}), 401
-
-        # Verify password
-        if not bcrypt.checkpw(password.encode('utf-8'), teacher['password']):
-            print(f"Invalid password for email: {email}")
-            return jsonify({'error': 'Invalid password'}), 401
-
-        print(f"Teacher logged in: {email}")
-        # Return success response
-        return jsonify({
-            'teacher': {
-                'name': teacher['name'],
-                'email': teacher['email'],
-                'qualification': teacher['qualification']
-            }
-        }), 200
-
-    except Exception as e:
-        print(f"Login error: {str(e)}")
-        return jsonify({'error': 'Server error'}), 500
 
 @app.route('/api/classrooms/<teacher>', methods=['GET'])
 def get_classrooms(teacher):
@@ -460,7 +357,7 @@ def create_classroom():
         quiz_data = {
             "title": f"Quiz for {name}",
             "questions": generated_questions,
-            "createdDate": datetime.now(),
+            "createdDate": datetime.datetime.now(),
             "googleFormLink": None
         }
         quiz_result = quiz_collection.insert_one(quiz_data)
@@ -534,7 +431,7 @@ def create_classroom():
             "title": f"Quiz for {name}",
             "questions": form_questions,
             "google_form_link": form_link,
-            "createdDate": datetime.now()
+            "createdDate": datetime.datetime.now()
         })
         print(f"Saved Google Form metadata for quiz {quiz_id} in form_responses_collection")
 
@@ -550,7 +447,7 @@ def create_classroom():
             "teacher": teacher,
             "students": students,
             "quizzes": [quiz_id],
-            "createdDate": datetime.now(),
+            "createdDate": datetime.datetime.now(),
             "status": "active"
         }
         classroom_result = classroom_collection.insert_one(classroom_data)
@@ -678,7 +575,7 @@ def fetch_store_responses(form_id):
                 "response_time": response_time,
                 "answers": formatted_answers,
                 "form_id": form_id,  # Store form_id with each response
-                "createdDate": datetime.now()
+                "createdDate": datetime.datetime.now()
             })
 
         if user_responses:
@@ -807,7 +704,7 @@ def evaluate_quiz():
             "percentage": round(percentage_score, 2),
             "total_questions": total_questions,
             "question_results": question_results,
-            "evaluated_at": datetime.now().isoformat()
+            "evaluated_at": datetime.datetime.now().isoformat()
         }
 
         # Update user response in MongoDB

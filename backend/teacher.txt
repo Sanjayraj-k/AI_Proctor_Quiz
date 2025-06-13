@@ -21,9 +21,11 @@ from bson.objectid import ObjectId
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
-import datetime
+import bcrypt
+from datetime import datetime
 import traceback
 from werkzeug.utils import secure_filename
+
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -44,7 +46,8 @@ try:
     quiz_collection = db["quizzes"]
     form_responses_collection = db["form_responses"]
     user_response_collection = db["user_response"]
-    print("MongoDB connection successful")
+    teacher_auth = db['teacher']
+    classrooms = db['classrooms']
 except Exception as e:
     print(f"MongoDB connection failed: {str(e)}")
 
@@ -233,41 +236,158 @@ def create_quiz_graph():
     workflow.set_entry_point("retrieve_content")
     return workflow.compile()
 
+# Add this import at the top of your file
+def is_valid_email(email):
+    import re
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(email_regex, email)
+
+@app.route('/api/teachers/signup', methods=['POST'])
+def signup():
+    try:
+        data = request.get_json()
+        print(f"Signup request data: {data}")
+        name = data.get('name')
+        email = data.get('email')
+        password = data.get('password')
+        qualification = data.get('qualification')
+
+        # Input validation
+        if not all([name, email, password, qualification]):
+            return jsonify({'error': 'All fields are required'}), 400
+        
+        if not is_valid_email(email):
+            return jsonify({'error': 'Invalid email format'}), 400
+        
+        if len(password) < 6:
+            return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+        # Check for existing teacher
+        if teacher_auth.find_one({'email': email}):
+            return jsonify({'error': 'Email already registered'}), 409
+
+        # Hash password
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+        # Create teacher document
+        teacher = {
+            'name': name,
+            'email': email,
+            'password': hashed_password,
+            'qualification': qualification,
+            'created_at': datetime.utcnow()
+        }
+
+        # Insert into MongoDB
+        result = teacher_auth.insert_one(teacher)
+        teacher_id = str(result.inserted_id)
+        print(f"Teacher created with ID: {teacher_id}")
+
+        # Return success response
+        return jsonify({
+            'message': 'Teacher created successfully',
+            'teacher': {
+                'name': name,
+                'email': email,
+                'qualification': qualification
+            }
+        }), 201
+
+    except Exception as e:
+        print(f"Signup error: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
+
+@app.route('/api/teachers/login', methods=['POST'])
+def login():
+    try:
+        data = request.get_json()
+        print(f"Login request data: {data}")
+        name = data.get('name')
+        email = data.get('email')
+        password = data.get('password')
+
+        # Input validation
+        if not all([name, email, password]):
+            return jsonify({'error': 'All fields are required'}), 400
+
+        # Find teacher
+        teacher = teacher_auth.find_one({'email': email, 'name': name})
+        if not teacher:
+            print(f"Teacher not found for email: {email}, name: {name}")
+            return jsonify({'error': 'Invalid name or email'}), 401
+
+        # Verify password
+        if not bcrypt.checkpw(password.encode('utf-8'), teacher['password']):
+            print(f"Invalid password for email: {email}")
+            return jsonify({'error': 'Invalid password'}), 401
+
+        print(f"Teacher logged in: {email}")
+        # Return success response
+        return jsonify({
+            'teacher': {
+                'name': teacher['name'],
+                'email': teacher['email'],
+                'qualification': teacher['qualification']
+            }
+        }), 200
+
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
+
+from datetime import datetime
+
 @app.route('/api/classrooms/<teacher>', methods=['GET'])
 def get_classrooms(teacher):
     try:
         classrooms = classroom_collection.find({"teacher": teacher})
         classrooms_list = []
+        
         for c in classrooms:
             quizzes = []
             for q in c.get("quizzes", []):
+                # Handle quizzes that may be ObjectId or other types
+                quizzes.append(str(q) if isinstance(q, ObjectId) else q)
+
+            # Convert students list to ensure no ObjectId
+            students = []
+            for s in c.get("students", []):
+                students.append(str(s))
+
+            # Handle createdDate safely - MORE ROBUST APPROACH
+            created = c.get("createdDate")
+            created_str = ""
+            if created:
                 try:
-                    quizzes.append(str(ObjectId(q)) if isinstance(q, ObjectId) else str(q))
-                except Exception as e:
-                    print(f"Invalid quiz ID: {q}, error: {str(e)}")
-                    continue
+                    # Try to call isoformat() if it's a datetime object
+                    created_str = created.isoformat()
+                except AttributeError:
+                    # If it doesn't have isoformat(), convert to string
+                    created_str = str(created)
 
             classroom_data = {
                 "_id": str(c["_id"]),
                 "name": c.get("name", ""),
                 "subject": c.get("subject", ""),
                 "description": c.get("description", ""),
-                "document": c.get("document", ""),
+                "document": c.get("document", ""),  # Ensure this field is serializable
                 "teacher": c.get("teacher", ""),
-                "students": c.get("students", []),
+                "students": students,
                 "quizzes": quizzes,
-                "createdDate": c["createdDate"].isoformat() if isinstance(c.get("createdDate"), datetime.datetime) else "",
+                "createdDate": created_str,
                 "status": c.get("status", "active")
             }
             classrooms_list.append(classroom_data)
         
         print(f"Fetched {len(classrooms_list)} classrooms for teacher: {teacher}")
         return jsonify(classrooms_list)
+    
     except Exception as e:
+        import traceback
         error_details = traceback.format_exc()
         print(f"Error in get_classrooms: {error_details}")
         return jsonify({"error": str(e)}), 500
-
+    
 @app.route('/api/classrooms', methods=['POST'])
 def create_classroom():
     print("Received request to create classroom")
