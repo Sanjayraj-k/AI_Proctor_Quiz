@@ -19,6 +19,10 @@ const TeacherDashboard = () => {
     numQuestions: 5,
   });
   const [error, setError] = useState('');
+  const [quizResults, setQuizResults] = useState([]); // New state for quiz results
+  const [showResultsModal, setShowResultsModal] = useState(false); // New state for modal visibility
+  const [resultsLoading, setResultsLoading] = useState(false); // New state for results loading
+  const [resultsError, setResultsError] = useState(''); // New state for results error
   const navigate = useNavigate();
 
   // Get teacher data from localStorage
@@ -66,6 +70,39 @@ const TeacherDashboard = () => {
       fetchClassrooms();
     }
   }, [teacherName]);
+
+  const fetchQuizResults = async (quizName, subject) => {
+    setResultsLoading(true);
+    setResultsError('');
+    setQuizResults([]);
+    try {
+      console.log(`Fetching quiz results for quiz: ${quizName}, subject: ${subject}`);
+      const response = await axios.get('http://localhost:5000/api/quiz-results', {
+        params: {
+          quizName,
+          subject,
+        },
+      });
+      console.log('Quiz results response:', response.data);
+      setQuizResults(response.data || []);
+      setShowResultsModal(true);
+    } catch (error) {
+      console.error('Error fetching quiz results:', error);
+      let errorMessage = 'Failed to load quiz results. Please try again.';
+      if (error.response?.status === 401) {
+        errorMessage = 'Session expired. Please log in again.';
+        localStorage.removeItem('teacherData');
+        navigate('/teacher/auth');
+      } else if (error.response) {
+        errorMessage = `Error: ${error.response.status} - ${error.response.data?.error || 'Unknown server error'}`;
+      } else if (error.request) {
+        errorMessage = 'Unable to reach the server. Please check if the backend is running.';
+      }
+      setResultsError(errorMessage);
+    } finally {
+      setResultsLoading(false);
+    }
+  };
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -154,6 +191,16 @@ const TeacherDashboard = () => {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleViewResults = (classroom) => {
+    // For simplicity, assume the first quiz in the classroom's quizzes array
+    const quiz = classroom.quizzes && classroom.quizzes.length > 0 ? classroom.quizzes[0] : null;
+    if (!quiz) {
+      setResultsError('No quizzes found for this classroom.');
+      return;
+    }
+    fetchQuizResults(quiz.name || quiz.quizName, classroom.subject);
   };
 
   const handleLogout = () => {
@@ -306,9 +353,13 @@ const TeacherDashboard = () => {
                       </div>
 
                       <div className="flex space-x-2">
-                        <button className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center">
+                        <button
+                          onClick={() => handleViewResults(classroom)}
+                          className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center"
+                          disabled={resultsLoading}
+                        >
                           <Eye className="h-4 w-4 mr-1" />
-                          View
+                          View Results
                         </button>
                         <button className="flex-1 bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center">
                           <Settings className="h-4 w-4 mr-1" />
@@ -320,6 +371,73 @@ const TeacherDashboard = () => {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {showResultsModal && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-20 mx-auto p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white">
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Quiz Results</h3>
+                  <button
+                    onClick={() => {
+                      setShowResultsModal(false);
+                      setResultsError('');
+                      setQuizResults([]);
+                    }}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {resultsError && (
+                  <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md flex items-center">
+                    <AlertCircle className="h-5 w-5 mr-2" />
+                    <span>{resultsError}</span>
+                  </div>
+                )}
+
+                {resultsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-2"></div>
+                    <span className="text-gray-600">Loading results...</span>
+                  </div>
+                ) : quizResults.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600">No results found for this quiz.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Student Email
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Marks
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Total Marks
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {quizResults.map((result, index) => (
+                          <tr key={index}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.email}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.marks}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.totalMarks}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

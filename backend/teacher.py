@@ -240,6 +240,51 @@ def create_quiz_graph():
     return workflow.compile()
 
 # Add this import at the top of your file
+@app.route('/api/quiz-results', methods=['GET'])
+def get_quiz_results():
+    try:
+        print("Fetching quiz results...")
+        subject = request.args.get('subject')
+
+        # Validate query parameters
+        if not subject:
+            print(f"Missing parameters: subject={subject}")
+            return jsonify({"error": "Subject is required"}), 400
+
+        # Query user_response_collection for all records matching the subject
+        results = user_response_collection.find(
+            {"subject": subject},
+            {"email": 1, "score": 1, "total_questions": 1, "timestamp": 1, "_id": 0}  # Include timestamp for clarity
+        )
+
+        # Convert cursor to list and format results
+        formatted_results = [
+            {
+                "email": result.get("email", "Unknown"),
+                "marks": result.get("score", 0),
+                "totalMarks": result.get("total_questions", 0),
+                "timestamp": result.get("timestamp", "N/A")  # Include timestamp to distinguish attempts
+            }
+            for result in results
+        ]
+
+        # Check if results exist
+        if not formatted_results:
+            print(f"No results found for subject: {subject}")
+            return jsonify({"error": "No results found for this subject"}), 404
+
+        # Log the number of results found
+        print(f"Found {len(formatted_results)} results for subject: {subject}")
+        for result in formatted_results:
+            print(f"Result: {result}")
+
+        return jsonify(formatted_results), 200
+
+    except Exception as e:
+        error_details = traceback.format_exc()
+        print(f"Error in get_quiz_results: {error_details}")
+        return jsonify({"error": str(e), "details": error_details}), 500
+    
 from datetime import datetime
 def is_valid_email(email):
     import re
@@ -461,7 +506,9 @@ def create_classroom():
             "title": f"Quiz for {name}",
             "questions": generated_questions,
             "createdDate": datetime.now(),
-            "googleFormLink": None
+            "googleFormLink": None,
+            "name": name,
+            "subject": subject
         }
         quiz_result = quiz_collection.insert_one(quiz_data)
         quiz_id = quiz_result.inserted_id
@@ -602,7 +649,9 @@ def student_login():
                         quizzes.append({
                             "_id": str(quiz["_id"]),
                             "title": quiz.get("title", ""),
-                            "googleFormLink": quiz.get("googleFormLink", "")
+                            "googleFormLink": quiz.get("googleFormLink", ""),
+                            "name": quiz.get("name", ""),
+                            "subject": quiz.get("subject", "")
                         })
                 except Exception as e:
                     print(f"Invalid quiz ID: {q}, error: {str(e)}")
@@ -807,7 +856,11 @@ def evaluate_quiz():
             "percentage": round(percentage_score, 2),
             "total_questions": total_questions,
             "question_results": question_results,
-            "evaluated_at": datetime.now().isoformat()
+            "evaluated_at": datetime.now().isoformat(),
+            "name": data.get("name", "Unknown"),
+            "email": data.get("studentEmail", "Unknown"),
+            "subject": data.get("subject", "General Knowledge"),
+            "guizid": data.get("quiz_id", str(form_response.get("quiz_id", ""))),
         }
 
         # Update user response in MongoDB

@@ -24,6 +24,7 @@ const StudentDashboard = () => {
     try {
       const response = await axios.post('http://localhost:5000/api/student/login', { email });
       const fetchedClassrooms = response.data || [];
+      localStorage.setItem('studentEmail', email);
       setClassrooms(fetchedClassrooms);
       setIsLoggedIn(true);
       setSuccessMessage('Login successful! Here are your classrooms.');
@@ -36,6 +37,11 @@ const StudentDashboard = () => {
 
   const handleStartProctoredQuiz = (quiz) => {
     navigate('/uploadface', { state: { quiz } });
+    console.log('Starting proctored quiz:', quiz);
+    localStorage.setItem('quizId', quiz._id);
+    localStorage.setItem('quizTitle', quiz.title);  
+    localStorage.setItem('name', quiz.name);
+    localStorage.setItem('subject', quiz.subject);
   };
 
   return (

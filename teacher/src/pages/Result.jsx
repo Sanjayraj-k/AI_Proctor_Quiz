@@ -36,11 +36,19 @@ const QuizResultsPage = () => {
       const formId = formIdData.form_id;
 
       // Step 2: Evaluate quiz with the form_id
-      console.log(`Evaluating quiz for form ID: ${formId}...`);
+      const requestBody = {
+        form_id: formId,
+        quizId: localStorage.getItem('quizId') || '',
+        name: localStorage.getItem('name') || '',
+        subject: localStorage.getItem('subject') || '',
+        studentEmail: localStorage.getItem('studentEmail') || ''
+      };
+      console.log('Request body:', requestBody);
+
       const evaluationResponse = await fetch('http://localhost:5000/evaluate-quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ form_id: formId }),
+        body: JSON.stringify(requestBody),
       });
       console.log('Evaluation response status:', evaluationResponse.status);
       if (!evaluationResponse.ok) {
@@ -50,8 +58,8 @@ const QuizResultsPage = () => {
       const evaluationData = await evaluationResponse.json();
       console.log('Evaluation data:', evaluationData);
 
-      if (!evaluationData || !evaluationData.question_results) {
-        throw new Error('Invalid evaluation data');
+      if (!evaluationData) {
+        throw new Error('Invalid evaluation data structure');
       }
 
       setQuizResult(evaluationData);
